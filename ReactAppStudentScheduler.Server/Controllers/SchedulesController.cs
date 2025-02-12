@@ -1,7 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using ReactAppStudentScheduler.Server.Models;
 using StudentScheduler.Data;
 
+using StudentScheduler.Services;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace StudentScheduler.Controllers
@@ -11,29 +12,35 @@ namespace StudentScheduler.Controllers
     public class SchedulesController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly ScheduleOptimizer _optimizer;
 
         public SchedulesController(AppDbContext context)
         {
             _context = context;
+            _optimizer = new ScheduleOptimizer(context);
         }
 
-        [HttpGet]
-        public IActionResult GetSchedules()
+        [HttpPost("optimize")]
+        public IActionResult OptimizeSchedule([FromBody] ScheduleRequest request)
         {
-            return Ok(_context.Schedules.ToList());
-        }
+            if (request == null || request.CourseIds == null || request.CourseIds.Count == 0)
+                return BadRequest("Invalid schedule request.");
 
-        [HttpPost]
-        public IActionResult CreateSchedule([FromBody] Schedule schedule)
-        {
-            if (schedule == null)
-            {
-                return BadRequest("Invalid schedule data");
-            }
+            var optimizedSchedule = _optimizer.GenerateOptimalSchedule(request.StudentId, request.CourseIds);
 
-            _context.Schedules.Add(schedule);
+            if (optimizedSchedule.Count == 0)
+                return Conflict("לא ניתן לשבץ אף קורס – כולם מלאים או שיש קונפליקטים!");
+
+            _context.Schedules.AddRange(optimizedSchedule);
             _context.SaveChanges();
-            return CreatedAtAction(nameof(GetSchedules), new { id = schedule.Id }, schedule);
+
+            return Ok(optimizedSchedule);
         }
+    }
+
+    public class ScheduleRequest
+    {
+        public int StudentId { get; set; }
+        public List<int> CourseIds { get; set; }
     }
 }
